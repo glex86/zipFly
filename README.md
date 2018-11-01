@@ -1,7 +1,7 @@
 ## G-Lex's zipFly compression library
 
 This PHP library helps you to create true zip64 archives on-the-fly without unwanted I/O operations.
-It compresses and directly write out the compresses data immediately after you added to the archive.
+With the help of PHP stream filters, it's immediately compresses the source file and write out the compressed data after you added the input file to the archive.
 
 ### Benefits over zipArchive
 
