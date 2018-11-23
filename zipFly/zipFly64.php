@@ -5,27 +5,39 @@
 
 namespace zipFly;
 
-use zipFly\parts\entry;
+use zipFly\Exceptions;
 
+/**
+ * G-Lex's ZIP Compression library
+ */
 class zipFly64 {
 
-    private $filename   = null;
-    private $fileHandle = null;
-    private $entries    = [];
-    private $offset     = 0;
-    private $isOpen     = false;
+    /**
+     * @var resource Output file pointer resource
+     */
+    private $fileHandle = false;
+
+    /**
+     * @var array File entries in the ZIP file
+     */
+    private $entries = [];
+
+    /**
+     * @var int Central Directory Start offset position of the ZIP file pointer
+     */
+    private $offsetCDStart = 0;
 
 
     use parts\headers;
 
     /**
      * Create new zipFly64 object
-     * If you specify the filename, it will create it
-     * @param string $filename
+     * If you specify the $filename argument, it will create a new ZIP archive file with the given filename.
+     * @param string $filename The name of the ZIP archive to create
      */
     public function __construct(string $filename = null) {
         if (PHP_INT_SIZE !== 8) {
-            throw new \Exception('64bit required');
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::NOT_64BIT, 1);
         }
 
         if (!is_null($filename)) {
@@ -36,53 +48,57 @@ class zipFly64 {
 
     /**
      * Release all resources
+     * If you didn't closed the last created ZIP archive, this will call the 'close' function
      */
     public function __destruct() {
-        if ($this->isOpen) {
+        if ($this->isOpen()) {
             $this->close();
         }
     }
 
 
     /**
-     * Create new ZIP file archive
-     * If the $overwrite argument false and the destination file is exists the function throws an exception
-     * @param string $filename Name of the ZIP file
-     * @param bool $overwrite Overwrite the destination
+     * Create new ZIP archive file
+     * Create a new file and open a ZIP file resource pointer with the given filename.
+     * If the $overwrite argument is set to false and the file is already exists the function will throw an exception instead of deleting the old file.
+     * @param string $filename Name of the ZIP archive file
+     * @param bool $overwrite Overwrite the file if exists
      * @throws Exceptions\directoryException
      * @throws Exceptions\fileException
      */
-    public function create(string $filename, bool $overwrite = true) {
-        if ($this->isOpen) {
+    public function create($filename, $overwrite = true) {
+        if ($this->isOpen()) {
             $this->close();
         }
 
         $directory = dirname($filename);
 
         if (!file_exists($directory)) {
-            throw new Exceptions\directoryException('Destination directory is not exists', $directory);
+            throw new Exceptions\directoryException($directory, Exceptions\directoryException::NOT_EXISTS, 1);
         }
 
         if (!is_writable($directory)) {
-            throw new Exceptions\directoryException('Destination directory is not writeable', $directory);
+            throw new Exceptions\directoryException($directory, Exceptions\directoryException::NOT_WRITEABLE, 1);
         }
 
         if (is_readable($filename)) {
             if (!$overwrite) {
-                throw new Exceptions\fileException('Destination file is exists', $filename, Exceptions\fileException::FILE_EXISTS);
+                throw new Exceptions\fileException($filename, Exceptions\fileException::EXISTS, 1);
             }
 
             unlink($filename);
         }
 
-        $this->filename   = $filename;
-        $this->fileHandle = fopen($this->filename, 'w');
-        $this->offset     = 0;
+        $this->fileHandle = fopen($filename, 'w');
         $this->entries    = [];
-        $this->isOpen     = true;
     }
 
 
+    /**
+     * Sanitize the given file path
+     * @param string $path
+     * @return string
+     */
     private static function cleanPath($path) {
         $path = trim(str_replace('\\', '/', $path), '/');
         $path = explode('/', $path);
@@ -103,8 +119,9 @@ class zipFly64 {
 
 
     /**
-     * Add file to the ZIP archive
-     * It compresses the file on the fly
+     * Adds a file to the ZIP archive
+     * Adds a file from a given '$localfile' path to the ZIP archive and place it inside the archive on the given $inArchiveFile path and name.
+     * You can also specify the compression method to be used.
      * @param string $localfile Local file name and path to be added
      * @param string $inArchiveFile Destination name and path in the ZIP file
      * @param int $compressionMethod
@@ -112,49 +129,55 @@ class zipFly64 {
      * @throws Exceptions\fileException
      * @throws \Exception
      */
-    public function addFile(string $localfile, string $inArchiveFile, int $compressionMethod = null) {
-        if (!$this->isOpen) {
-            throw new Exceptions\zipFlyException('The Zip file is not initialized', Exceptions\zipFlyException::NOT_INITIALIZED);
+    public function addFile($localfile, $inArchiveFile, $compressionMethod = null) {
+        if (!$this->isOpen()) {
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::NOT_OPENED, 1);
+        }
+
+        if (!file_exists($localfile)) {
+            throw new Exceptions\fileException($localfile, Exceptions\fileException::NOT_EXISTS, 1);
         }
 
         if (!is_readable($localfile)) {
-            throw new Exceptions\fileException('Input file not exists', $localfile, Exceptions\fileException::FILE_NOT_READABLE);
+            throw new Exceptions\fileException($localfile, Exceptions\fileException::NOT_READABLE, 1);
         }
 
         $preparedInArchiveFile = self::cleanPath($inArchiveFile);
 
         if (!$preparedInArchiveFile) {
-            throw new \Exception('In-Archive file path must be given: '.$inArchiveFile);
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::BAD_INARCHIVE_PATH, 1, ['path' => $inArchiveFile]);
         }
 
         $length = strlen($preparedInArchiveFile);
         if (0x0000 > $length || $length > 0xffff) {
-            throw new \Exception('Illegal in archive name parameter');
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::LONG_INARCHIVE_PATH, 1, ['path' => $inArchiveFile]);
         }
 
         if (isset($this->entries[$preparedInArchiveFile])) {
-            throw new \Exception('In-Archive file path is already exists: '.$inArchiveFile);
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::EXISTS_INARCHIVE_ENTRY, 1, ['path' => $inArchiveFile]);
         }
 
-        $this->entries[$preparedInArchiveFile] = new entry($this->fileHandle, $localfile, $preparedInArchiveFile, $compressionMethod);
-
-        $this->offset = ftell($this->fileHandle);
+        $entry                                 = new parts\entry($this->fileHandle, $localfile, $preparedInArchiveFile, $compressionMethod);
+        $this->entries[$preparedInArchiveFile] = $entry->getCentralDirectoryRecord();
     }
 
 
     /**
-     * Close the ZIP archive file
+     * Close the ZIP archive
+     * Write out the Central Directory and close the internal ZIP file resource pointer
      * @throws Exceptions\zipFlyException
      */
     public function close() {
-        if (!$this->isOpen) {
-            throw new Exceptions\zipFlyException('The Zip file is not initialized', Exceptions\zipFlyException::NOT_INITIALIZED);
+        if (!$this->isOpen()) {
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::NOT_OPENED, 1);
         }
+
+        $this->offsetCDStart = ftell($this->fileHandle);
 
         //Write Central Directory
         $cdSize = 0;
         foreach ($this->entries as $entry) {
-            $cdSize += fwrite($this->fileHandle, $entry->getCentralDirectoryRecord());
+            $cdSize += fwrite($this->fileHandle, $entry);
         }
 
         //Write Zip64 Central Directory
@@ -167,11 +190,20 @@ class zipFly64 {
         fclose($this->fileHandle);
 
         //Reset all internal variable
-        $this->isOpen     = false;
-        $this->filename   = null;
-        $this->offset     = 0;
-        $this->entries    = [];
-        $this->fileHandle = null;
+        $this->entries = [];
+    }
+
+
+    /**
+     * Checks the internal ZIP file resource pointer is opened or not
+     * An internal file resource pointer is opened when you call the "create" function or give a filename to the constructor.
+     * After you call the "close" function the file pointer is closed.
+     *
+     * @return boolean True for opened ZIP file resource pointer
+     * @throws Exceptions\zipFlyException
+     */
+    private function isOpen() {
+        return is_resource($this->fileHandle);
     }
 
 

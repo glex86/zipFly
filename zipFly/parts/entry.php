@@ -27,8 +27,8 @@ class entry {
     private $localHeaderLength = 0;
     private $cdRec             = '';
     private $uncompressedHash  = null;
-    private $uncompressedSize  = 0;
     private $compressedSize    = 0;
+    private $uncompressedSize  = 0;
     private $dataCRC32         = 0;
 
 
@@ -37,12 +37,10 @@ class entry {
 
         $this->offsetStart = ftell($this->zipHandle);
 
-
         $this->sourceFileInfo = new \SplFileInfo($localfile);
         $this->lastmod        = $this->sourceFileInfo->getMTime();
 
         $this->inArchiveFile = $inArchiveFile;
-
 
         $this->compression = $compressionMethod;
         $this->level       = $compressionLevel;
@@ -51,13 +49,12 @@ class entry {
         $this->localHeader       = $this->getLocalFileHeader();
         $this->localHeaderLength = strlen($this->localHeader);
         $this->offsetData        = $this->offsetStart + $this->localHeaderLength;
+
+        //Seek to the calculated data-start position (in PHP you can seek past the end-of-file)
         fseek($this->zipHandle, $this->offsetData);
 
         $this->compressEntry();
         $this->offsetEnd = ftell($this->zipHandle);
-
-        // build cdRec
-        $this->cdRec = $this->buildCentralDirectoryHeader();
 
         //Create new local header with updated compressed length
         $this->localHeader = $this->getLocalFileHeader();
@@ -143,7 +140,7 @@ class entry {
 
 
     public function getCentralDirectoryRecord() {
-        return $this->cdRec;
+        return $this->buildCentralDirectoryHeader();
     }
 
 

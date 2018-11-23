@@ -201,7 +201,7 @@ trait headers {
                 [self::pack64le($cdRecCount),                                 'total number of entries in the central directory on this disk', 8],
                 [self::pack64le($cdRecCount),                                 'total number of entries in the central directory', 8],
                 [self::pack64le($cdRecLength),                                'size of the central directory', 8],
-                [self::pack64le($this->offset),                               'offset of start of central directory with respect to the starting disk number', 8],
+                [self::pack64le($this->offsetCDStart),                               'offset of start of central directory with respect to the starting disk number', 8],
                 ['',                                                          'zip64 extensible data sector', 'v']
             ];
 
@@ -210,7 +210,7 @@ trait headers {
 
 
     private function buildZip64EndOfCentralDirectoryLocator($cdRecLength) {
-        $zip64RecStart = $this->offset + $cdRecLength;
+        $zip64RecStart = $this->offsetCDStart + $cdRecLength;
 
         $fields = [
                 [self::pack32le(zipConst::ZIP64_END_OF_CENTRAL_DIR_LOCATOR),  'zip64 end of central dir locator signature', 4],
@@ -233,7 +233,7 @@ trait headers {
         else {
             $diskNumber = 0;
             $cdRecCount = sizeof($this->entries);
-            $offset = $this->offset;
+            $offset = $this->offsetCDStart;
         }
 
         $fields = [

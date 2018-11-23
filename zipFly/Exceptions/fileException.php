@@ -2,43 +2,34 @@
 
 namespace zipFly\Exceptions;
 
-class fileException extends \RuntimeException {
-    const FILE_EXISTS = 1;
-    const FILE_NOT_EXISTS = 2;
-    const FILE_NOT_READABLE = 3;
+use zipFly\Exceptions\abstractException;
 
-    private $filename = '';
+class fileException extends abstractException {
 
-    public function __construct($message, string $filename, int $code = 0, \Exception $previous = null) {
-        parent::__construct($message, $code, $previous);
-        $this->filename = $filename;
+    const EXISTS        = 1;
+    const NOT_EXISTS    = 2;
+    const NOT_READABLE  = 3;
+    const NOT_WRITEABLE = 3;
+
+
+    protected $messages = [
+        self::EXISTS        => 'File is already exists',
+        self::NOT_EXISTS    => 'File is not exists',
+        self::NOT_READABLE  => 'File is not readable',
+        self::NOT_WRITEABLE => 'File is not writeable',
+    ];
+
+
+    public function __construct(string $filename, int $code = 0, int $backtraceOffset = 1) {
+        parent::__construct($code, $backtraceOffset);
+
+        $this->fields['filename'] = $filename;
     }
+
 
     public function getFilename() {
-        return $this->filename;
+        return $this->fields['filename'];
     }
 
-    public function getCodeAsString(int $code) {
-        switch ($code) {
-            case self::FILE_EXISTS:
-                return 'exists';
-                break;
 
-            case self::FILE_NOT_EXISTS:
-                return 'not-exists';
-                break;
-
-            case self::FILE_NOT_READABLE:
-                return 'not-exists';
-                break;
-
-            default:
-                return 'unknown';
-                break;
-        }
-    }
-
-    public function getReason() {
-        return $this->getCodeAsString($this->code);
-    }
 }

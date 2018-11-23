@@ -2,15 +2,30 @@
 
 namespace zipFly\Exceptions;
 
-class directoryException extends \RuntimeException {
-    private $directory = '';
+use zipFly\Exceptions\abstractException;
 
-    public function __construct($message, string $directory, int $code = 0, \Exception $previous = null) {
-        parent::__construct($message, $code, $previous);
-        $this->directory = $directory;
+class directoryException extends abstractException {
+
+    const NOT_EXISTS    = 1;
+    const NOT_WRITEABLE = 2;
+
+
+    protected $messages = [
+        self::NOT_EXISTS    => 'Directory is not exists',
+        self::NOT_WRITEABLE => 'Directory is not writeable',
+    ];
+
+
+    public function __construct(string $directory, int $code = 0, int $backtraceOffset = 1) {
+        parent::__construct($code, $backtraceOffset);
+
+        $this->fields['directory'] = $directory;
     }
+
 
     public function getDirectory() {
-        return $this->directory;
+        return $this->fields['directory'];
     }
+
+
 }

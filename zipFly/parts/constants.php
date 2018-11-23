@@ -2,6 +2,7 @@
 /**
  * This file is a part of G-Lex's zipFly compression library
  */
+
 namespace zipFly\parts;
 
 /**
@@ -9,14 +10,15 @@ namespace zipFly\parts;
  */
 class constants {
     /**/
-    const METHOD_STORE    = 0;
-    const METHOD_DEFLATE  = 8;
-    const METHOD_BZIP2    = 12;
+
+    const METHOD_STORE   = 0;
+    const METHOD_DEFLATE = 8;
+    const METHOD_BZIP2   = 12;
 
     /**/
-    const LEVEL_MIN     = 0;
-    const LEVEL_NORMAL  = 1;
-    const LEVEL_MAX     = 2;
+    const LEVEL_MIN    = 0;
+    const LEVEL_NORMAL = 1;
+    const LEVEL_MAX    = 2;
 
     /**/
     const GPFLAG_NONE  = 0x0000; // no flags set
@@ -33,8 +35,9 @@ class constants {
     const ZIP64_END_OF_CENTRAL_DIR_LOCATOR = 0x07064b50;  // zip64 end of central directory locator
     const ZIP_STREAM_DATA_DESCRIPTOR       = 0x08074b50;  // data descriptor header
 
-    /**/ //1048560 vs 1048576
-    const STREAM_CHUNK_SIZE                = 1048576; // 16 * 65535 = almost 1mb chunks, for best deflate performance //1048576
+    /**/
+    const STREAM_CHUNK_SIZE = 1048576; // 16 * 65535 = almost 1mb chunks, for best deflate performance //1048576
+    const ATTR_MADE_BY_VERSION = 63; // made by version  (upper byte: UNIX, lower byte v4.5)
 
-    const ATTR_MADE_BY_VERSION             = 63; // made by version  (upper byte: UNIX, lower byte v4.5)
+
 }
