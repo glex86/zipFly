@@ -37,11 +37,11 @@ This was the point where I decided to develop my own solution.
 
 
 ### Ideas to be tested and reimplemented
-- [ ] Streamable zip creation
-- [ ] Switch between 32bit and 64bit mode
+- [x] Streamable zip creation
+- [x] Switch between 32bit and 64bit mode
 - [ ] Compress small files in one step
 - [ ] Add file from string
-- [ ] Print out debug informations
+- [x] Print out debug informations
 _Technically, these features were the basics of the finished class, but due to optimization and simplicity, they are not currently in the classroom._
 
 ### My motivation
