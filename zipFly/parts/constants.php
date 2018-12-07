@@ -16,9 +16,9 @@ class constants {
     const METHOD_BZIP2   = 12;
 
     /**/
-    const LEVEL_MIN    = 0;
-    const LEVEL_NORMAL = 1;
-    const LEVEL_MAX    = 2;
+    const LEVEL_MIN    = 0x10000;
+    const LEVEL_NORMAL = 0x20000;
+    const LEVEL_MAX    = 0x30000;
 
     /**/
     const GPFLAG_NONE  = 0x0000; // no flags set
@@ -39,5 +39,5 @@ class constants {
     const STREAM_CHUNK_SIZE = 1048576; // 16 * 65535 = almost 1mb chunks, for best deflate performance //1048576
     const ATTR_MADE_BY_VERSION = 63; // made by version  (upper byte: UNIX, lower byte v4.5)
 
-
+    const VERSION_TO_EXTRACT = 46;
 }

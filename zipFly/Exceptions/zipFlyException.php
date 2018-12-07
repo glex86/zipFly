@@ -11,6 +11,7 @@ class zipFlyException extends abstractException {
     const BAD_INARCHIVE_PATH     = 3;
     const LONG_INARCHIVE_PATH    = 4;
     const EXISTS_INARCHIVE_ENTRY = 5;
+    const ALREADY_OPEN   = 6;
 
 
     protected $messages = [
@@ -19,6 +20,7 @@ class zipFlyException extends abstractException {
         self::BAD_INARCHIVE_PATH     => 'Bad in-Archive file path given',
         self::LONG_INARCHIVE_PATH    => 'Too long in-Archive file path given',
         self::EXISTS_INARCHIVE_ENTRY => 'The in-Archive entry is already exists',
+        self::ALREADY_OPEN           => 'You can not set archive features after the archive created',
     ];
 
 

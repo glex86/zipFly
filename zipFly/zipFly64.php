@@ -7,28 +7,18 @@ namespace zipFly;
 
 use zipFly\Exceptions;
 
+require_once 'parts/hashStream.php';
+
 /**
  * G-Lex's ZIP Compression library
  */
-class zipFly64 {
-
-    /**
-     * @var resource Output file pointer resource
-     */
-    private $fileHandle = false;
+class zipFly64 extends parts\base {
 
     /**
      * @var array File entries in the ZIP file
      */
     private $entries = [];
 
-    /**
-     * @var int Central Directory Start offset position of the ZIP file pointer
-     */
-    private $offsetCDStart = 0;
-
-
-    use parts\headers;
 
     /**
      * Create new zipFly64 object
@@ -58,20 +48,56 @@ class zipFly64 {
 
 
     /**
+     * Enable or disable the supported ZIP features
+     * @param type $zip64 ZIP64 extension
+     * @param type $zipStream Streamable ZIPs
+     * @throws Exceptions\zipFlyException
+     */
+    public function setZipFeature(bool $zip64 = true, bool $zipStream = false) {
+        if ($this->isOpen()) {
+            throw new Exceptions\zipFlyException(Exceptions\zipFlyException::ALREADY_OPEN, 1);
+        }
+
+        if (!is_null($zip64)) {
+            self::$isZip64 = (bool)$zip64;
+        }
+
+        if (!is_null($zipStream)) {
+            self::$isZipStream = (bool)$zipStream;
+        }
+    }
+
+
+    /**
      * Create new ZIP archive file
      * Create a new file and open a ZIP file resource pointer with the given filename.
      * If the $overwrite argument is set to false and the file is already exists the function will throw an exception instead of deleting the old file.
-     * @param string $filename Name of the ZIP archive file
+     * @param string $output Name of the ZIP archive file
      * @param bool $overwrite Overwrite the file if exists
      * @throws Exceptions\directoryException
      * @throws Exceptions\fileException
      */
-    public function create($filename, $overwrite = true) {
+    public function create($output, $overwrite = true) {
         if ($this->isOpen()) {
             $this->close();
         }
 
-        $directory = dirname($filename);
+        if (is_resource($output)) {
+            $meta = stream_get_meta_data($output);
+
+            if (preg_match('/[waxc+]/', $meta['mode']) !== 1) {
+                throw new \RuntimeException;
+            }
+
+            if (!$meta['seekable'] && !self::$isZipStream) {
+                throw new \RuntimeException;
+            }
+
+            self::$fileHandle = $output;
+            return true;
+        }
+
+        $directory = dirname($output);
 
         if (!file_exists($directory)) {
             throw new Exceptions\directoryException($directory, Exceptions\directoryException::NOT_EXISTS, 1);
@@ -81,41 +107,17 @@ class zipFly64 {
             throw new Exceptions\directoryException($directory, Exceptions\directoryException::NOT_WRITEABLE, 1);
         }
 
-        if (is_readable($filename)) {
+        if (is_readable($output)) {
             if (!$overwrite) {
-                throw new Exceptions\fileException($filename, Exceptions\fileException::EXISTS, 1);
+                throw new Exceptions\fileException($output, Exceptions\fileException::EXISTS, 1);
             }
 
-            unlink($filename);
+            unlink($output);
         }
 
-        $this->fileHandle = fopen($filename, 'w');
-        $this->entries    = [];
+        self::$fileHandle = fopen($output, 'wb');
     }
 
-
-    /**
-     * Sanitize the given file path
-     * @param string $path
-     * @return string
-     */
-    private static function cleanPath($path) {
-        $path = trim(str_replace('\\', '/', $path), '/');
-        $path = explode('/', $path);
-
-        $newpath = array();
-        foreach ($path as $p) {
-            if ($p === '' || $p === '.') {
-                continue;
-            }
-            if ($p === '..') {
-                array_pop($newpath);
-                continue;
-            }
-            array_push($newpath, $p);
-        }
-        return trim(implode('/', $newpath), '/');
-    }
 
 
     /**
@@ -129,7 +131,14 @@ class zipFly64 {
      * @throws Exceptions\fileException
      * @throws \Exception
      */
-    public function addFile($localfile, $inArchiveFile, $compressionMethod = null) {
+    public function addFile($localfile, $inArchiveFile, $compressionMethod = self::METHOD_DEFLATE) {
+        if (self::$isDebugMode) {
+            $title       = $localfile.' -> '.$inArchiveFile.' ('.strlen($inArchiveFile).' bytes)';
+            $titleLength = mb_strlen($title);
+            echo "\n   +".str_repeat('-', $titleLength)."+\n  / {$title} \\\n";
+            echo " +--".str_repeat('-', $titleLength).'--+'.str_repeat('-', 153 - $titleLength)."\n |\n";
+        }
+
         if (!$this->isOpen()) {
             throw new Exceptions\zipFlyException(Exceptions\zipFlyException::NOT_OPENED, 1);
         }
@@ -157,8 +166,11 @@ class zipFly64 {
             throw new Exceptions\zipFlyException(Exceptions\zipFlyException::EXISTS_INARCHIVE_ENTRY, 1, ['path' => $inArchiveFile]);
         }
 
-        $entry                                 = new parts\entry($this->fileHandle, $localfile, $preparedInArchiveFile, $compressionMethod);
-        $this->entries[$preparedInArchiveFile] = $entry->getCentralDirectoryRecord();
+        $this->entries[$preparedInArchiveFile] = (string) new parts\entry($localfile, $preparedInArchiveFile, $compressionMethod);
+
+        if (self::$isDebugMode) {
+            echo ' |'.str_repeat('_', 158)."\n\n\n";
+        }
     }
 
 
@@ -172,25 +184,40 @@ class zipFly64 {
             throw new Exceptions\zipFlyException(Exceptions\zipFlyException::NOT_OPENED, 1);
         }
 
-        $this->offsetCDStart = ftell($this->fileHandle);
+        if (self::$isDebugMode) {
+            $title       = sprintf('CENTRAL DIRECTORY - Total %d file entries', count($this->entries));
+            $titleLength = mb_strlen($title);
+            echo "\n +".str_repeat('-', $titleLength + 2)."+\n | {$title} |\n";
+            echo ' +'.str_repeat('-', $titleLength + 2).'+'.str_repeat('-', 155 - $titleLength)."\n |\n";
+        }
+
+        if (self::$isZipStream) {
+            $offsetCDStart = self::$localStreamOffset;
+        } else {
+            $offsetCDStart = ftell(self::$fileHandle);
+        }
 
         //Write Central Directory
         $cdSize = 0;
         foreach ($this->entries as $entry) {
-            $cdSize += fwrite($this->fileHandle, $entry);
+            $cdSize += fwrite(self::$fileHandle, $entry);
         }
 
         //Write Zip64 Central Directory
-        if ($this->isZip64) {
-            fwrite($this->fileHandle, $this->buildZip64EndOfCentralDirectoryRecord($cdSize));
-            fwrite($this->fileHandle, $this->buildZip64EndOfCentralDirectoryLocator($cdSize));
+        if (self::$isZip64) {
+            fwrite(self::$fileHandle, self::buildZip64EndOfCentralDirectoryRecord($offsetCDStart, sizeof($this->entries), $cdSize));
+            fwrite(self::$fileHandle, self::buildZip64EndOfCentralDirectoryLocator($offsetCDStart, $cdSize));
         }
 
-        fwrite($this->fileHandle, $this->buildEndOfCentralDirectoryRecord($cdSize));
-        fclose($this->fileHandle);
+        fwrite(self::$fileHandle, self::buildEndOfCentralDirectoryRecord($offsetCDStart, sizeof($this->entries), $cdSize));
+        fclose(self::$fileHandle);
 
         //Reset all internal variable
         $this->entries = [];
+
+        if (self::$isDebugMode) {
+            echo ' |'.str_repeat('_', 158)."\n\n\n";
+        }
     }
 
 
@@ -203,7 +230,7 @@ class zipFly64 {
      * @throws Exceptions\zipFlyException
      */
     private function isOpen() {
-        return is_resource($this->fileHandle);
+        return is_resource(self::$fileHandle);
     }
 
 

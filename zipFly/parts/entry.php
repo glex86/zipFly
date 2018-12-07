@@ -5,90 +5,86 @@
 
 namespace zipFly\parts;
 
-use zipFly\parts\constants as zipConst;
+class entry extends base {
 
-require_once 'hashStream.php';
-
-class entry {
-
-    use headers;
-
-    private $zipHandle         = null;
-    private $offsetStart       = 0;
-    private $offsetData        = 0;
-    private $offsetEnd         = 0;
-    private $inArchiveFile     = '';
-    private $sourceFileInfo    = null;
-    private $gpFlags           = zipConst::GPFLAG_NONE;
-    private $compression       = zipConst::METHOD_DEFLATE;
-    private $level             = zipConst::LEVEL_NORMAL;
-    private $lastmod           = 0;
-    private $localHeader       = '';
-    private $localHeaderLength = 0;
-    private $cdRec             = '';
-    private $uncompressedHash  = null;
-    private $compressedSize    = 0;
-    private $uncompressedSize  = 0;
-    private $dataCRC32         = 0;
+    private $gpFlags                = self::GPFLAG_NONE;
+    private $compression            = self::METHOD_DEFLATE + self::LEVEL_NORMAL;
+    private $compressedSize         = 0;
+    private $uncompressedSize       = 0;
+    private $dataCRC32              = 0;
+    private $centralDirectoryHeader = '';
 
 
-    public function __construct($zipFileHandle, $localfile, $inArchiveFile, $compressionMethod = zipConst::METHOD_DEFLATE, $compressionLevel = zipConst::LEVEL_NORMAL) {
-        $this->zipHandle = $zipFileHandle;
+    public function __construct($localfile, $inArchiveFile, $compressionMethod = self::METHOD_DEFLATE, $compressionLevel = self::LEVEL_NORMAL) {
+        if (self::$isZipStream) {
+            $offsetStart = self::$localStreamOffset;
+        } else {
+            $offsetStart = ftell(self::$fileHandle);
+        }
 
-        $this->offsetStart = ftell($this->zipHandle);
+        $sourceFileInfo = new \SplFileInfo($localfile);
+        $lastmod        = self::getDosTime($sourceFileInfo->getMTime());
 
-        $this->sourceFileInfo = new \SplFileInfo($localfile);
-        $this->lastmod        = $this->sourceFileInfo->getMTime();
+        $this->gpFlags = self::$isZipStream ? self::GPFLAG_ADD : self::GPFLAG_NONE;
 
-        $this->inArchiveFile = $inArchiveFile;
-
-        $this->compression = $compressionMethod;
-        $this->level       = $compressionLevel;
+        $this->compression = $compressionMethod + $compressionLevel;
         $this->compressorGPFlag();
 
-        $this->localHeader       = $this->getLocalFileHeader();
-        $this->localHeaderLength = strlen($this->localHeader);
-        $this->offsetData        = $this->offsetStart + $this->localHeaderLength;
+        if (self::$isZipStream) {
+            self::$localStreamOffset += fwrite(self::$fileHandle,
+                    self::getLocalFileHeader($inArchiveFile, $lastmod, $this->compressedSize, $this->uncompressedSize, $this->dataCRC32, $offsetStart, $this->gpFlags, $this->compression & 0xffff));
+        }
+        else {
+            //Calculate the size of the local header
+            $localHeaderLength = 30 + strlen($inArchiveFile);
+            if (self::$isZip64) {
+                $localHeaderLength += 32;
+            }
 
-        //Seek to the calculated data-start position (in PHP you can seek past the end-of-file)
-        fseek($this->zipHandle, $this->offsetData);
+            //Seek to the calculated data-start position (in PHP you can seek past the end-of-file)
+            fseek(self::$fileHandle, $offsetStart + $localHeaderLength);
+        }
 
-        $this->compressEntry();
-        $this->offsetEnd = ftell($this->zipHandle);
 
-        //Create new local header with updated compressed length
-        $this->localHeader = $this->getLocalFileHeader();
-        fseek($this->zipHandle, $this->offsetStart);
-        fwrite($this->zipHandle, $this->localHeader);
-        fseek($this->zipHandle, $this->offsetEnd);
+        $this->compressEntry($sourceFileInfo->getRealPath());
+
+        if (self::$isZipStream) {
+            self::$localStreamOffset += $this->compressedSize;
+            self::$localStreamOffset += fwrite(self::$fileHandle, self::getDataDescriptor($this->uncompressedSize, $this->compressedSize, $this->dataCRC32));
+        }
+        else {
+            //Create new local header with updated compressed length
+            $offsetEnd = ftell(self::$fileHandle);
+            fseek(self::$fileHandle, $offsetStart);
+            fwrite(self::$fileHandle,
+                    self::getLocalFileHeader($inArchiveFile, $lastmod, $this->compressedSize, $this->uncompressedSize, $this->dataCRC32, $offsetStart, $this->gpFlags, $this->compression & 0xffff));
+            fseek(self::$fileHandle, $offsetEnd);
+        }
+
+        $this->centralDirectoryHeader = self::buildCentralDirectoryHeader($inArchiveFile, $lastmod, $this->compressedSize, $this->uncompressedSize, $this->dataCRC32, $offsetStart, $this->gpFlags,
+                        $this->compression & 0xffff);
     }
 
 
-    public function storeHash($hash, $size) {
-        $this->uncompressedHash = $hash;
-        $this->uncompressedSize = $size;
-    }
+    private function compressEntry($localFile) {
+        $stream = \fopen($localFile, 'r');
+
+        stream_filter_append($stream, "hash-stream", STREAM_FILTER_READ, array(&$this->dataCRC32, &$this->uncompressedSize));
 
 
-    private function compressEntry() {
-        $stream = \fopen($this->sourceFileInfo->getRealPath(), 'r');
-
-        stream_filter_append($stream, "hash-stream", STREAM_FILTER_READ, array(&$this, 'storeHash'));
-
-
-        switch ($this->compression) {
-            case zipConst::METHOD_STORE:
+        switch ($this->compression & 0xffff) {
+            case self::METHOD_STORE:
                 break;
 
-            case zipConst::METHOD_BZIP2:
+            case self::METHOD_BZIP2:
                 stream_filter_append($stream, 'bzip2.compress', STREAM_FILTER_READ);
                 break;
 
             default:
-                if ($this->level == zipConst::LEVEL_MAX) {
+                if ($this->compression & 0xffff0000 == self::LEVEL_MAX) {
                     $params = array('level' => 9);
                 }
-                elseif ($this->level == zipConst::LEVEL_MIN) {
+                elseif ($this->compression & 0xffff0000 == self::LEVEL_MIN) {
                     $params = array('level' => 1);
                 }
                 else {
@@ -101,46 +97,44 @@ class entry {
         $this->compressedSize = 0;
 
 
-        while (!feof($stream) && $data = fread($stream, zipConst::STREAM_CHUNK_SIZE)) {
+        while (!feof($stream) && $data = fread($stream, self::STREAM_CHUNK_SIZE)) {
             $this->compressedSize += strlen($data);
 
-            fwrite($this->zipHandle, $data);
+            fwrite(self::$fileHandle, $data);
         }
 
 
         fclose($stream);
-
-        $this->dataCRC32 = $this->uncompressedHash[1];
     }
 
 
     private function compressorGPFlag() {
-        if (zipConst::METHOD_DEFLATE === $this->compression) {
+        if (self::METHOD_DEFLATE === $this->compression) {
             $bit1 = false;
             $bit2 = false;
-            switch ($this->level) {
-                case zipConst::LEVEL_MAX:
+            switch ($this->compression & 0xffff0000) {
+                case self::LEVEL_MAX:
                     $bit1 = true;
                     break;
 
-                case zipConst::LEVEL_NORMAL:
+                case self::LEVEL_NORMAL:
                     //$bit2 = true;
                     break;
 
-                case zipConst::LEVEL_MIN:
+                case self::LEVEL_MIN:
                     $bit1 = true;
                     $bit2 = true;
                     break;
             }
 
-            $this->gpFlags |= ($bit1 ? zipConst::GPFLAG_COMP1 : 0);
-            $this->gpFlags |= ($bit2 ? zipConst::GPFLAG_COMP2 : 0);
+            $this->gpFlags |= ($bit1 ? self::GPFLAG_COMP1 : 0);
+            $this->gpFlags |= ($bit2 ? self::GPFLAG_COMP2 : 0);
         }
     }
 
 
-    public function getCentralDirectoryRecord() {
-        return $this->buildCentralDirectoryHeader();
+    public function __toString() {
+        return $this->centralDirectoryHeader;
     }
 
 
