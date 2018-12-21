@@ -1,7 +1,5 @@
 <?php
 
-define('GLEX_DEFAULT_EXCEPTION_STRING', true);
-define('GLEX_DEFAULT_EXCEPTION_TRACE', true);
 
 function gAutoLoader($class) {
     $class = str_replace('\\', DIRECTORY_SEPARATOR, $class);

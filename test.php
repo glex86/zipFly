@@ -33,4 +33,6 @@ $zipFile->create(GTEST_DIR.'onfly'.$nr.'.zip');
 
 $zipFile->addFile(GTEST_DIR."zipFly/zipFly64.php", "zipFly64.php", \zipFly\zipFly64::METHOD_BZIP2);
 $zipFile->addFile(GTEST_DIR."zipFly/parts/headers.php", "parts/headers.php", \zipFly\zipFly64::METHOD_DEFLATE);
+$zipFile->addFromString("Zip64\nTest\n", 'test.txt');
+
 $zipFile->close();

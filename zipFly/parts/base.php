@@ -5,33 +5,26 @@
 
 namespace zipFly\parts;
 
-use zipFly\parts\constants as constants;
+/**
+ * Zip base class
+ */
+abstract class base extends constants {
 
-class base extends constants {
     use headers;
 
-
+    /** @var int Current offset in the output stream */
     protected static $localStreamOffset = 0;
 
-
-    /**
-     * @var bool Debug mode
-     */
+    /** @var bool Debug mode */
     protected static $isDebugMode = false;
 
-    /**
-     * @var bool ZIP64 archive format or the standard zip format
-     */
+    /** @var bool ZIP64 archive format or the standard zip format */
     protected static $isZip64 = true;
 
-    /**
-     * @var bool Streamed ZIP format or the standard zip format
-     */
+    /** @var bool Streamed ZIP format or the standard zip format */
     protected static $isZipStream = false;
 
-    /**
-     * @var resource Output file pointer resource
-     */
+    /** @var resource Output file pointer resource */
     protected static $fileHandle = false;
 
 
@@ -39,8 +32,12 @@ class base extends constants {
      * Set debug mode
      * @param bool $mode
      */
-    public function setDebugMode(bool $mode) {
+    public function setDebugMode($mode) {
         self::$isDebugMode = $mode;
+
+        if (self::$isDebugMode) {
+            \zipFly\parts\debugger::setZip64(self::$isZip64);
+        }
     }
 
 
@@ -93,5 +90,6 @@ class base extends constants {
         }
         return trim(implode('/', $newpath), '/');
     }
+
 
 }

@@ -11,15 +11,14 @@ class directoryException extends abstractException {
 
 
     protected $messages = [
-        self::NOT_EXISTS    => 'Directory is not exists',
-        self::NOT_WRITEABLE => 'Directory is not writeable',
+        self::NOT_EXISTS    => ['directory'=>'The given directory (%directory%) is not exists', 'The given directory is not exists'],
+        self::NOT_WRITEABLE => ['directory'=>'The given directory (%directory%) is not writeable', 'The given directory is not writeable'],
     ];
 
 
-    public function __construct(string $directory, int $code = 0, int $backtraceOffset = 1) {
-        parent::__construct($code, $backtraceOffset);
-
+    public function __construct($directory, $code = 0, $backtraceOffset = 1) {
         $this->fields['directory'] = $directory;
+        parent::__construct($code, $backtraceOffset);
     }
 
 

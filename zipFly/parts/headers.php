@@ -7,15 +7,6 @@ namespace zipFly\parts;
 
 trait headers {
 
-    private static function hexen($value) {
-        $res = unpack('H*', $value)[1];
-        $res = str_split($res, 2);
-        $res = implode(' ', $res);
-
-        return $res;
-    }
-
-
     private static function pack16le($data) {
         return pack('v', $data);
     }
@@ -31,39 +22,19 @@ trait headers {
     }
 
 
-    private static function generateHeader($fields, $name) {
-        $debugOut = '';
-        $fileOut  = '';
-        foreach ($fields as $field) {
-            if (self::$isDebugMode) {
-                $debugOut .= sprintf(" |   | %3d + %-2d bytes | %-24s | %-2s bytes | %s\n", strlen($fileOut), strlen($field[0]), substr(self::hexen($field[0]), 0, 23), $field[2], $field[1]);
-            }
-
-            $fileOut .= $field[0];
-        }
+    private static function buildZip64ExtendedInformationField($startOffset, $uncompressedSize = 0, $compressedSize = 0) {
+        $fields = self::pack16le(self::ZIP64_EXTENDED_INFORMATION_EXTRA_FIELD)  // 2 - tag for this "extra" block type (ZIP64)
+                .self::pack16le(28)                                             // 2 - size of this "extra" block
+                .self::pack64le($uncompressedSize)                              // 8 - original uncompressed file size
+                .self::pack64le($compressedSize)                                // 8 - size of compressed data
+                .self::pack64le($startOffset)                                   // 8 - offset of local header record
+                .self::pack32le(0);                                             // 4 - number of the disk on which this file starts
 
         if (self::$isDebugMode) {
-            echo sprintf(" |  \n |   [ %s ] (Total size: %d bytes)\n", $name, strlen($fileOut));
-            echo ' |   +'.str_repeat('-', 16).'+'.str_repeat('-', 26).'+'.str_repeat('-', 9).'+'.str_repeat('-', 100)."\n";
-            echo $debugOut;
-            echo ' |   +'.str_repeat('-', 16).'+'.str_repeat('-', 26).'+'.str_repeat('-', 9).'+'.str_repeat('-', 100)."\n |  \n";
+            debugger::debugHeader($fields);
         }
 
-        return $fileOut;
-    }
-
-
-    private static function buildZip64ExtendedInformationField($startOffset, $uncompressedSize = 0, $compressedSize = 0) {
-        $fields = [
-            [self::pack16le(0x0001), 'tag for this "extra" block type (ZIP64)', 2],
-            [self::pack16le(28), 'size of this "extra" block', 2],
-            [self::pack64le($uncompressedSize), 'original uncompressed file size', 8],
-            [self::pack64le($compressedSize), 'size of compressed data', 8],
-            [self::pack64le($startOffset), 'offset of local header record', 8],
-            [self::pack32le(0), 'number of the disk on which this file starts', 4],
-        ];
-
-        return self::generateHeader($fields, 'ZIP64 EXTENDED INFORMATION EXTRA FIELD');
+        return $fields;
     }
 
 
@@ -77,47 +48,47 @@ trait headers {
             $zip64Ext = '';
         }
 
-        $fields = [
-            [self::pack32le(self::ZIP_LOCAL_FILE_HEADER), 'local file header signature', 4],
-            [self::pack16le(self::VERSION_TO_EXTRACT), 'version needed to extract', 2],
-            [self::pack16le($gpFlags), 'general purpose bit flag', 2],
-            [self::pack16le($compressionMethod), 'compression method', 2],
-            [self::pack32le($dosTime), 'last mod file time + last mod file date ', 4],
-            [self::pack32le($dataCRC32), 'crc-32', 4],
-            [self::pack32le($compressedSize), 'compressed size', 4],
-            [self::pack32le($uncompressedSize), 'uncompressed size', 4],
-            [self::pack16le(strlen($fileName)), 'file name length', 2],
-            [self::pack16le(strlen($zip64Ext)), 'extra field length', 2],
-            [$fileName, 'file name', 'v'],
-            [$zip64Ext, 'extra field', 'v']
-        ];
+        $fields = self::pack32le(self::ZIP_LOCAL_FILE_HEADER)   // 4 - local file header signature
+                .self::pack16le(self::VERSION_TO_EXTRACT)       // 2 - version needed to extract
+                .self::pack16le($gpFlags)                       // 2 - general purpose bit flag
+                .self::pack16le($compressionMethod)             // 2 - compression method
+                .self::pack32le($dosTime)                       // 4 - last mod file time + last mod file date
+                .self::pack32le($dataCRC32)                     // 4 - crc-32
+                .self::pack32le($compressedSize)                // 4 - compressed size
+                .self::pack32le($uncompressedSize)              // 4 - uncompressed size
+                .self::pack16le(strlen($fileName))              // 2 - file name length
+                .self::pack16le(strlen($zip64Ext))              // 2 - extra field length
+                .$fileName                                      // 'v' - file name
+                .$zip64Ext;                                     // 'v' - extra field
 
-        return self::generateHeader($fields, 'LOCAL FILE HEADER');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 
     protected static function getDataDescriptor($uncompressedSize, $compressedSize, $dataCRC32) {
         if (self::$isZip64) {
-            $length                 = 24;
-            $paramLength            = 8;
             $packedCompressedSize   = self::pack64le($compressedSize);
             $packedUncompressedSize = self::pack64le($uncompressedSize);
         }
         else {
-            $length                 = 16;
-            $paramLength            = 4;
             $packedCompressedSize   = self::pack32le($compressedSize);
             $packedUncompressedSize = self::pack32le($uncompressedSize);
         }
 
-        $fields = [
-            [self::pack32le(self::ZIP_STREAM_DATA_DESCRIPTOR), 'Extended Local file header signature', 4],
-            [self::pack32le($dataCRC32), 'CRC-32', 4],
-            [$packedCompressedSize, 'Compressed size', $paramLength],
-            [$packedUncompressedSize, 'Uncompressed size', $paramLength]
-        ];
+        $fields = self::pack32le(self::ZIP_STREAM_DATA_DESCRIPTOR)  // 4 - Extended Local file header signature
+                .self::pack32le($dataCRC32)                         // 4 - CRC-32
+                .$packedCompressedSize                              // 4/8 - Compressed size
+                .$packedUncompressedSize;                           // 4/8 - Uncompressed size
 
-        return self::generateHeader($fields, 'DATA DESCRIPTOR / ELFH');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 
@@ -131,69 +102,75 @@ trait headers {
             $startOffset      = -1;
         }
         else {
-            $zip64Ext         = '';
-            $diskNo           = 0;
+            $zip64Ext = '';
+            $diskNo   = 0;
         }
 
         //hack
         $extFileAttr = 32;
 
-        $fields = [
-            [self::pack32le(self::ZIP_CENTRAL_FILE_HEADER), 'central file header signature', 4],
-            [self::pack16le(self::ATTR_MADE_BY_VERSION), 'version made by', 2],
-            [self::pack16le(self::VERSION_TO_EXTRACT), 'version needed to extract', 2],
-            [self::pack16le($gpFlags), 'general purpose bit flag', 2],
-            [self::pack16le($compressionMethod), 'compression method', 2],
-            [self::pack32le($dosTime), 'last mod file time + last mod file date', 4],
-            [self::pack32le($dataCRC32), 'crc-32', 4],
-            [self::pack32le($compressedSize), 'compressed size', 4],
-            [self::pack32le($uncompressedSize), 'uncompressed size', 4],
-            [self::pack16le(strlen($fileName)), 'file name length', 2],
-            [self::pack16le(strlen($zip64Ext)), 'extra field length', 2],
-            [self::pack16le(0), 'file comment length', 2],
-            [self::pack16le($diskNo), 'disk number start', 2],
-            [self::pack16le(0), 'internal file attributes', 2],
-            [self::pack32le($extFileAttr), 'external file attributes', 4],
-            [self::pack32le($startOffset), 'relative offset of local header', 4],
-            [$fileName, 'file name', 'v'],
-            [$zip64Ext, 'extra field', 'v'],
-            ['', 'file comment', 'v']
-        ];
+        $fields = self::pack32le(self::ZIP_CENTRAL_FILE_HEADER) // 4 - central file header signature
+                .self::pack16le(self::ATTR_MADE_BY_VERSION)     // 2 - version made by
+                .self::pack16le(self::VERSION_TO_EXTRACT)       // 2 - version needed to extract
+                .self::pack16le($gpFlags)                       // 2 - general purpose bit flag
+                .self::pack16le($compressionMethod)             // 2 - compression method
+                .self::pack32le($dosTime)                       // 4 - last mod file time + last mod file date
+                .self::pack32le($dataCRC32)                     // 4 - crc-32
+                .self::pack32le($compressedSize)                // 4 - compressed size
+                .self::pack32le($uncompressedSize)              // 4 - uncompressed size
+                .self::pack16le(strlen($fileName))              // 2 - file name length
+                .self::pack16le(strlen($zip64Ext))              // 2 - extra field length
+                .self::pack16le(0)                              // 2 - file comment length
+                .self::pack16le($diskNo)                        // 2 - disk number start
+                .self::pack16le(0)                              // 2 - internal file attributes
+                .self::pack32le($extFileAttr)                   // 4 - external file attributes
+                .self::pack32le($startOffset)                   // 4 - relative offset of local header
+                .$fileName                                      // 'v' - file name
+                .$zip64Ext                                      // 'v' - extra field
+                .'';                                            // 'v' - file comment
 
-        return self::generateHeader($fields, 'CENTRAL DIRECTORY HEADER');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 
     protected static function buildZip64EndOfCentralDirectoryRecord($cdStartOffset, $cdRecCount, $cdRecLength) {
-        $fields = [
-            [self::pack32le(self::ZIP64_END_OF_CENTRAL_DIRECTORY), 'zip64 end of central dir signature', 4],
-            [self::pack64le(44), 'size of zip64 end of central directory record', 8],
-            [self::pack16le(self::ATTR_MADE_BY_VERSION), 'version made by', 2],
-            [self::pack16le(self::VERSION_TO_EXTRACT), 'version needed to extract', 2],
-            [self::pack32le(0), 'number of this disk', 4],
-            [self::pack32le(0), 'number of the disk with the start of the central directory', 4],
-            [self::pack64le($cdRecCount), 'total number of entries in the central directory on this disk', 8],
-            [self::pack64le($cdRecCount), 'total number of entries in the central directory', 8],
-            [self::pack64le($cdRecLength), 'size of the central directory', 8],
-            [self::pack64le($cdStartOffset), 'offset of start of central directory with respect to the starting disk number', 8],
-            ['', 'zip64 extensible data sector', 'v']
-        ];
+        $fields = self::pack32le(self::ZIP64_END_OF_CENTRAL_DIRECTORY)  // 4 - zip64 end of central dir signature
+                .self::pack64le(44)                                     // 8 - size of zip64 end of central directory record
+                .self::pack16le(self::ATTR_MADE_BY_VERSION)             // 2 - version made by
+                .self::pack16le(self::VERSION_TO_EXTRACT)               // 2 - version needed to extract
+                .self::pack32le(0)                                      // 4 - number of this disk
+                .self::pack32le(0)                                      // 4 - number of the disk with the start of the central directory
+                .self::pack64le($cdRecCount)                            // 8 - total number of entries in the central directory on this disk
+                .self::pack64le($cdRecCount)                            // 8 - total number of entries in the central directory
+                .self::pack64le($cdRecLength)                           // 8 - size of the central directory
+                .self::pack64le($cdStartOffset)                         // 8 - offset of start of central directory with respect to the starting disk number
+                .'';                                                    // 'v' - zip64 extensible data sector
 
-        return self::generateHeader($fields, 'ZIP64 END of CENTRAL DIRECTORY RECORD');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 
     protected static function buildZip64EndOfCentralDirectoryLocator($cdStartOffset, $cdRecLength) {
         $zip64RecStart = $cdStartOffset + $cdRecLength;
 
-        $fields = [
-            [self::pack32le(self::ZIP64_END_OF_CENTRAL_DIR_LOCATOR), 'zip64 end of central dir locator signature', 4],
-            [self::pack32le(0), 'number of the disk with the start of the zip64 end of central directory', 4],
-            [self::pack64le($zip64RecStart), 'relative offset of the zip64 end of central directory record', 8],
-            [self::pack32le(1), 'total number of disks', 4],
-        ];
+        $fields = self::pack32le(self::ZIP64_END_OF_CENTRAL_DIR_LOCATOR)    // 4 - zip64 end of central dir locator signature
+                .self::pack32le(0)                                          // 4 - number of the disk with the start of the zip64 end of central directory
+                .self::pack64le($zip64RecStart)                             // 8 - relative offset of the zip64 end of central directory record
+                .self::pack32le(1);                                         // 4 - total number of disks
 
-        return self::generateHeader($fields, 'ZIP64 END of CENTRAL DIRECTORY LOCATOR');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 
@@ -208,19 +185,21 @@ trait headers {
             $diskNumber = 0;
         }
 
-        $fields = [
-            [self::pack32le(self::ZIP_END_OF_CENTRAL_DIRECTORY), 'end of central dir signature', 4],
-            [self::pack16le($diskNumber), 'number of this disk', 2],
-            [self::pack16le($diskNumber), 'number of the disk with the start of the central directory', 2],
-            [self::pack16le($cdRecCount), 'total number of entries in the central directory on this disk', 2],
-            [self::pack16le($cdRecCount), 'total number of entries in the central directory', 2],
-            [self::pack32le($cdRecLength), 'size of the central directory', 4],
-            [self::pack32le($cdStartOffset), 'offset of start of central directory with respect to the starting disk number', 4],
-            [self::pack16le(0), 'ZIP file comment length', 2],
-            ['', 'ZIP file comment', 'v']
-        ];
+        $fields = self::pack32le(self::ZIP_END_OF_CENTRAL_DIRECTORY)    // 4 - end of central dir signature
+                .self::pack16le($diskNumber)                            // 2 - number of this disk
+                .self::pack16le($diskNumber)                            // 2 - number of the disk with the start of the central directory
+                .self::pack16le($cdRecCount)                            // 2 - total number of entries in the central directory on this disk
+                .self::pack16le($cdRecCount)                            // 2 - total number of entries in the central directory
+                .self::pack32le($cdRecLength)                           // 4 - size of the central directory
+                .self::pack32le($cdStartOffset)                         // 4 - offset of start of central directory with respect to the starting disk number
+                .self::pack16le(0)                                      // 2 - ZIP file comment length
+                .'';                                                    // 'v' - ZIP file comment
 
-        return self::generateHeader($fields, 'END of CENTRAL DIRECTORY RECORD');
+        if (self::$isDebugMode) {
+            debugger::debugHeader($fields);
+        }
+
+        return $fields;
     }
 
 

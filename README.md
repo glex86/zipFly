@@ -33,14 +33,14 @@ This was the point where I decided to develop my own solution.
 - [x] Easy to use
 - [x] Error handling
 - [x] Documented public interfaces
-- [ ] Well documented source
+- [x] Well documented source
 
 
 ### Ideas to be tested and reimplemented
 - [x] Streamable zip creation
 - [x] Switch between 32bit and 64bit mode
-- [ ] Compress small files in one step
-- [ ] Add file from string
+- [x] Compress small files in one step
+- [x] Add file from string
 - [x] Print out debug informations
 _Technically, these features were the basics of the finished class, but due to optimization and simplicity, they are not currently in the classroom._
 
@@ -57,6 +57,23 @@ By combining best techniques from these with my own ideas, I've created the zipF
 - Ability to print out the generated headers in a fancy form
 - Custom created php stream filter to calculate the uncompressed input file size and the crc32 hash value, by examining the chunks readed by the compressor
 - Data compression using stream filters attached to the read chain of the source file. Allowing to process the source file chunk-by-chunk
+
+### Whats new
+
+#### 2018-12-21
+- Documented the source code
+- Configurable duplicate entry filter
+- New methods for add entries to the archive:
+  - addFile - Add entry from file
+  - addFromString - Add entry from string input
+  - addFromStream - Add entry from stream resource
+- Compress small files in one step instead of streamed processing
+- Ability to directly stream out the generated ZIP file to the browser or any stream resource without saving it to the local storage.
+- Separated the debug functionality
+- Improved Exception system
+- Code cleanup
+- Speed and memory optimizations
+- Minimum required PHP version: 5.6.3
 
 ### Warnings & Limitations
 This library and the associated files are non commercial product.
